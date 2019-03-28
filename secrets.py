@@ -8,4 +8,5 @@ secrets = {
     'ssid' : 'YOUR_ROUTER_SSID',             # Keep the two '' quotes around the name
     'password' : 'YOUR_ROUTER_PASSWORD',         # Keep the two '' quotes around password
     'github_token' : 'YOUR_GITHUB_ACCESS_TOKEN',
+    'youtube_token' : 'YOUR_YOUTUBE_ACCESS_TOKEN'
     }

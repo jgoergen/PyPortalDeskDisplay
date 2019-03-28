@@ -5,31 +5,26 @@ import board
 import busio
 from digitalio import DigitalInOut
 import pulseio
-import adafruit_touchscreen
 import neopixel
+import storage
+import displayio
+import audioio
 from adafruit_esp32spi import adafruit_esp32spi
 import adafruit_esp32spi.adafruit_esp32spi_requests as requests
 from adafruit_display_text.Label import Label
 from adafruit_bitmap_font import bitmap_font
-import storage
 import adafruit_sdcard
-import displayio
-import audioio
+import adafruit_adt7410
+import adafruit_touchscreen
 
 from secrets import secrets
 
 # Support functions !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
-def set_backlight(val):
+
+def setBacklight(val):
 
     global backlight
-
-    """Adjust the TFT backlight.
-
-    :param val: The backlight brightness. Use a value between ``0`` and ``1``, where ``0`` is
-                off, and ``1`` is 100% brightness.
-
-    """
 
     val = max(0, min(1.0, val))
 
@@ -39,27 +34,26 @@ def set_backlight(val):
         board.DISPLAY.auto_brightness = False
         board.DISPLAY.brightness = val
 
-def play_file(file_name, wait_to_finish=True):
-    
+
+def playWavFile(file_name, wait_to_finish=True):
+
     global _speaker_enable
     global audio
-    
-    """Play a wav file.
 
-    :param str file_name: The name of the wav file to play on the speaker.
-
-    """
     board.DISPLAY.wait_for_frame()
     wavfile = open(file_name, "rb")
     wavedata = audioio.WaveFile(wavfile)
     _speaker_enable.value = True
     audio.play(wavedata)
+
     if not wait_to_finish:
         return
     while audio.playing:
         pass
+    
     wavfile.close()
     _speaker_enable.value = False
+
 
 def setBackground(file_or_color, position=None):
 
@@ -70,7 +64,7 @@ def setBackground(file_or_color, position=None):
     global displayio
 
     if not position:
-        position = (0, 0)  # default in top corner
+        position = (0, 0)
 
     if bg_file:
         bg_file.close()
@@ -78,11 +72,12 @@ def setBackground(file_or_color, position=None):
     # clear previous background
     while bg_group:
         bg_group.pop()
-        
-    if isinstance(file_or_color, str): # its a filenme:
+
+    if isinstance(file_or_color, str):
+        # its a filenme:
         bg_file = open(file_or_color, "rb")
         background = displayio.OnDiskBitmap(bg_file)
-        
+
         try:
             bg_sprite = displayio.TileGrid(background,
                                            pixel_shader=displayio.ColorConverter(),
@@ -99,12 +94,12 @@ def setBackground(file_or_color, position=None):
         color_palette[0] = file_or_color
         try:
             bg_sprite = displayio.TileGrid(color_bitmap,
-                                                    pixel_shader=color_palette,
-                                                    position=(0, 0))
+                                           pixel_shader=color_palette,
+                                           position=(0, 0))
         except TypeError:
             bg_sprite = displayio.TileGrid(color_bitmap,
-                                                    pixel_shader=color_palette,
-                                                    x=position[0], y=position[1])
+                                           pixel_shader=color_palette,
+                                           x=position[0], y=position[1])
     else:
         raise RuntimeError("Unknown type of background")
 
@@ -113,6 +108,7 @@ def setBackground(file_or_color, position=None):
     gc.collect()
     board.DISPLAY.wait_for_frame()
 
+
 def connectToWifi():
 
     global esp
@@ -120,21 +116,20 @@ def connectToWifi():
     global secrets
 
     statusNeopixel.fill((0, 0, 100))
-    
+
     while not esp.is_connected:
         # secrets dictionary must contain 'ssid' and 'password' at a minimum
-        print("Connecting to AP", secrets['ssid'])
-        statusNeopixel.fill((100, 0, 0)) # red = not connected
+        statusNeopixel.fill((100, 0, 0))  # red = not connected
+
         try:
             esp.connect(secrets)
-            statusNeopixel.fill((0,100,0))
+            statusNeopixel.fill((0, 100, 0))
         except RuntimeError as error:
-            print("Cound not connect to internet", error)
-            print("Retrying in 3 seconds...")
             time.sleep(3)
 
+
 def loadBitmapFromUrl(url, imagePosition):
-    
+
     global sdCard
     global wget
     global setBackground
@@ -142,23 +137,25 @@ def loadBitmapFromUrl(url, imagePosition):
     try:
         if sdCard:
             filename = "/sd/tempImage.bmp"
-            chunk_size = 512  # current bug in big SD writes -> stick to 1 block
-            
+            # current bug in big SD writes -> stick to 1 block
+            chunk_size = 512  
+
             try:
-                wget(image_url, filename, chunk_size=chunk_size)
+                wget(url, filename, chunk_size = chunk_size)
 
             except OSError as error:
                 print(error)
-                raise OSError("""\n\nNo writable filesystem found for saving datastream. Insert an SD card or set internal filesystem to be unsafe by setting 'disable_concurrent_write_protection' in the mount options in boot.py""") # pylint: disable=line-too-long
-            
+                raise OSError("""\n\nNo writable filesystem found for saving datastream. Insert an SD card or set internal filesystem to be unsafe by setting 'disable_concurrent_write_protection' in the mount options in boot.py""")  # pylint: disable=line-too-long
+
             setBackground(filename, imagePosition)
     finally:
         gc.collect()
 
-def wget(url, filename, *, chunk_size=512):
-    
+
+def wget(url, filename, *, chunk_size = 512):
+
     global statusNeopixel
-    
+
     """Download a url and save to filename location, like the command wget.
 
     :param url: The URL from which to obtain the data.
@@ -187,54 +184,67 @@ def wget(url, filename, *, chunk_size=512):
     r.close()
     statusNeopixel.fill((0, 0, 0))
 
+
 def jsonTraverse(json, path):
     value = json
     for x in path:
         value = value[x]
         gc.collect()
     return value
-    
+
+def updateBootProgress(phrase, step):
+    global progressLabel
+
+    if progressLabel is None:
+        progressLabel = Label(arialFont, text = str(phrase))
+        progressLabel.x = 30
+        progressLabel.y = 30
+        progressLabel.color = 0xFFFFFF
+        primaryDisplayGroup.append(progressLabel)
+    else:
+        progressLabel._update_text(str(phrase))
+
+    board.DISPLAY.refresh_soon()
+    board.DISPLAY.wait_for_frame()
+    pass
+
 # Init !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
 # Global settings
 rootDirectory = ("/"+__file__).rsplit('/', 1)[0]
 
-collegiateFont = bitmap_font.load_font(rootDirectory + "/fonts/Collegiate-50.bdf")
+collegiateFont = bitmap_font.load_font(
+    rootDirectory + "/fonts/Collegiate-50.bdf")
 arialFont = bitmap_font.load_font(rootDirectory + "/fonts/Arial.bdf")
 
 # Turn on backlight
 try:
-    backlight = pulseio.PWMOut(board.TFT_BACKLIGHT)  # pylint: disable=no-member
+    backlight = pulseio.PWMOut(board.TFT_BACKLIGHT) 
 except ValueError:
     backlight = None
-    
-set_backlight(1.0)
+
+setBacklight(1.0)
 
 # Create 'group' for drawing to display
-primaryDisplayGroup = displayio.Group(max_size=15)
+primaryDisplayGroup = displayio.Group(max_size = 15)
 board.DISPLAY.show(primaryDisplayGroup)
 
 # Create 'group' for drawing backgrounds to display
 bg_file = None
 bg_sprite = None
-bg_group = displayio.Group(max_size=5)
+bg_group = displayio.Group(max_size = 5)
 primaryDisplayGroup.append(bg_group)
 
 # Set black background
 setBackground(0x000000)
 
-progressLabel = Label(arialFont, text = str("Setting up Neopixel"))
-progressLabel.x = 30
-progressLabel.y = 30
-progressLabel.color = 0xFFFFFF
-primaryDisplayGroup.append(progressLabel)
-board.DISPLAY.refresh_soon()
-board.DISPLAY.wait_for_frame()
+updateBootProgress("Setting up Neopixel", 0)
 
 # Setup neopixel on back of unit
 statusNeopixel = neopixel.NeoPixel(board.NEOPIXEL, 1, brightness=0.2)
 
-progressLabel._update_text(str("Setting up Audio"))  # pylint: disable=protected-access
+progressLabel._update_text(str("Setting up Audio")) 
 board.DISPLAY.refresh_soon()
 board.DISPLAY.wait_for_frame()
 
@@ -243,9 +253,7 @@ _speaker_enable = DigitalInOut(board.SPEAKER_ENABLE)
 _speaker_enable.switch_to_output(False)
 audio = audioio.AudioOut(board.AUDIO_OUT)
 
-progressLabel._update_text(str("Setting up WIFI"))  # pylint: disable=protected-access
-board.DISPLAY.refresh_soon()
-board.DISPLAY.wait_for_frame()
+updateBootProgress("Setting up WIFI", 1)
 
 # Enable connection to esp32
 esp32_ready = DigitalInOut(board.ESP_BUSY)
@@ -255,8 +263,8 @@ esp32_cs = DigitalInOut(board.ESP_CS)
 spi = busio.SPI(board.SCK, board.MOSI, board.MISO)
 
 esp = adafruit_esp32spi.ESP_SPIcontrol(spi, esp32_cs, esp32_ready,
-                                                esp32_reset, esp32_gpio0)
-for _ in range(3): # retries
+                                       esp32_reset, esp32_gpio0)
+for _ in range(3):  # retries
     try:
         print("ESP firmware:", esp.firmware_version)
         break
@@ -269,15 +277,11 @@ else:
 
 requests.set_interface(esp)
 
-progressLabel._update_text(str("Connecting to WIFI"))  # pylint: disable=protected-access
-board.DISPLAY.refresh_soon()
-board.DISPLAY.wait_for_frame()
+updateBootProgress("Connecting to WIFI", 2)
 
 connectToWifi()
 
-progressLabel._update_text(str("Setting up SD Card"))  # pylint: disable=protected-access
-board.DISPLAY.refresh_soon()
-board.DISPLAY.wait_for_frame()
+updateBootProgress("Setting up SD Card", 3)
 gc.collect()
 
 # Init SD Card
@@ -290,27 +294,33 @@ try:
 except OSError as error:
     print("No SD card found:", error)
 
-progressLabel._update_text(str("Setting up Touch"))  # pylint: disable=protected-access
-board.DISPLAY.refresh_soon()
-board.DISPLAY.wait_for_frame()
+updateBootProgress("Setting up Touch", 4)
 
 # Init Touch Screen
 # pylint: disable=no-member
 touchscreen = adafruit_touchscreen.Touchscreen(board.TOUCH_XL, board.TOUCH_XR,
                                                board.TOUCH_YD, board.TOUCH_YU,
                                                calibration=((5200, 59000),
-                                                           (5800, 57000)),
+                                                            (5800, 57000)),
                                                size=(320, 240))
 # pylint: enable=no-member
 
 while progressLabel:
     progressLabel.pop()
 
+updateBootProgress("Setting up Temp Sensor", 5)
+i2c_bus = busio.I2C(board.SCL, board.SDA)
+adt = adafruit_adt7410.ADT7410(i2c_bus, address=0x48)
+adt.high_resolution = True
+
+updateBootProgress("Setting up Light Sensor", 6)
+lightADC = AnalogIn(board.LIGHT)
+
+updateBootProgress("Starting Dash!", 6)
 gc.collect()
-board.DISPLAY.refresh_soon()
-board.DISPLAY.wait_for_frame()
 
 # Display features !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
 def showGithubStats(repo):
 
@@ -322,79 +332,238 @@ def showGithubStats(repo):
     global collegiateFont
     global primaryDisplayGroup
 
-    repoUrl = "https://api.github.com/repos" + repo + "?access_token="+secrets['github_token']
-    starCountJsonPropPath = ["stargazers_count"]
+    url = "https://api.github.com/repos" + repo + "?access_token="+secrets['github_token']
+    countJsonPropPath = ["stargazers_count"]
 
     # get data from url
     statusNeopixel.fill((100, 100, 0))   # yellow = fetching data
     gc.collect()
-    r = requests.get(repoUrl)
+    r = requests.get(url)
     gc.collect()
     statusNeopixel.fill((0, 0, 100))   # green = got data
     jsonData = r.json()
     r.close()
     gc.collect()
 
-    starCount = jsonTraverse(jsonData, starCountJsonPropPath)
+    count = jsonTraverse(jsonData, countJsonPropPath)
 
     # display data
-    starCount = Label(collegiateFont, text = str(starCount))
-    starCount.x = 200
-    starCount.y = 100
-    starCount.color = 0xFFFFFF
-    primaryDisplayGroup.append(starCount)
+    countLabel = Label(collegiateFont, text=str(count))
+    countLabel.x = 200
+    countLabel.y = 100
+    countLabel.color = 0xFFFFFF
+    primaryDisplayGroup.append(countLabel)
 
     # load github stat background
     setBackground(rootDirectory + "/githubstar.bmp")
 
-    # wait 
+    # wait
     time.sleep(60)
 
     # cleanup!
-    while starCount:
-        starCount.pop()
+    while countLabel:
+        countLabel.pop()
+
+
+def showRedditStats(subreddit):
+
+    global rootDirectory
+    global statusNeopixel
+    global setBackground
+    global jsonTraverse
+    global board
+    global collegiateFont
+    global primaryDisplayGroup
+
+    url = "https://www.reddit.com/r/" + subreddit + "/about.json"
+    countJsonPropPath = ["data", "subscribers"]
+
+    # get data from url
+    statusNeopixel.fill((100, 100, 0))   # yellow = fetching data
+    gc.collect()
+    r = requests.get(url)
+    gc.collect()
+    statusNeopixel.fill((0, 0, 100))   # green = got data
+    jsonData = r.json()
+    r.close()
+    gc.collect()
+
+    count = jsonTraverse(jsonData, countJsonPropPath)
+
+    # display data
+    countLabel = Label(collegiateFont, text=str(count))
+    countLabel.x = 200
+    countLabel.y = 100
+    countLabel.color = 0xFFFFFF
+    primaryDisplayGroup.append(countLabel)
+
+    # load github stat background
+    setBackground(rootDirectory + "/reddit_background.bmp")
+
+    # wait
+    time.sleep(60)
+
+    # cleanup!
+    while countLabel:
+        countLabel.pop()
+
+
+def showTwitterStats(twitterName):
+
+    global rootDirectory
+    global statusNeopixel
+    global setBackground
+    global jsonTraverse
+    global board
+    global collegiateFont
+    global primaryDisplayGroup
+
+    url = "https://cdn.syndication.twimg.com/widgets/followbutton/info.json?screen_names=" + twitterName
+    countJsonPropPath = [0, "followers_count"]
+
+    # get data from url
+    statusNeopixel.fill((100, 100, 0))   # yellow = fetching data
+    gc.collect()
+    r = requests.get(url)
+    gc.collect()
+    statusNeopixel.fill((0, 0, 100))   # green = got data
+    jsonData = r.json()
+    r.close()
+    gc.collect()
+
+    count = jsonTraverse(jsonData, countJsonPropPath)
+
+    # display data
+    countLabel = Label(collegiateFont, text=str(count))
+    countLabel.x = 200
+    countLabel.y = 100
+    countLabel.color = 0xFFFFFF
+    primaryDisplayGroup.append(countLabel)
+
+    # load github stat background
+    setBackground(rootDirectory + "/twitter_background.bmp")
+
+    # wait
+    time.sleep(60)
+
+    # cleanup!
+    while countLabel:
+        countLabel.pop()
+
+def showYoutubeStats(channelId):
+
+    global rootDirectory
+    global statusNeopixel
+    global setBackground
+    global jsonTraverse
+    global board
+    global collegiateFont
+    global primaryDisplayGroup
+
+    url = "https://www.googleapis.com/youtube/v3/channels/?part=statistics&id=" + channelId + "&key=" + secrets['youtube_token']
+    countJsonPropPath = ["items", 0, "statistics", "viewCount"]
+    count2JsonPropPath = ["items", 0, "statistics", "subscriberCount"]
+
+    # get data from url
+    statusNeopixel.fill((100, 100, 0))   # yellow = fetching data
+    gc.collect()
+    r = requests.get(url)
+    gc.collect()
+    statusNeopixel.fill((0, 0, 100))   # green = got data
+    jsonData = r.json()
+    r.close()
+    gc.collect()
+
+    count = jsonTraverse(jsonData, countJsonPropPath)
+    count2 = jsonTraverse(jsonData, count2JsonPropPath)
+
+    # display data
+    countLabel = Label(collegiateFont, text=str(count))
+    countLabel.x = 100
+    countLabel.y = 129
+    countLabel.color = 0xFFFFFF
+
+    countLabel2 = Label(collegiateFont, text=str(count))
+    countLabel2.x = 155
+    countLabel2.y = 180
+    countLabel2.color = 0xFFFFFF
+
+    primaryDisplayGroup.append(countLabel)
+    primaryDisplayGroup.append(countLabel2)
+
+    # load github stat background
+    setBackground(rootDirectory + "/youtube_background.bmp")
+
+    # wait
+    time.sleep(60)
+
+    # cleanup!
+    while countLabel:
+        countLabel.pop()
+
+    while countLabel2:
+        countLabel.pop()
+
+
+def showLocalTemperature(LogToSd):
+
+    global rootDirectory
+    global setBackground
+    global board
+    global collegiateFont
+    global primaryDisplayGroup
+
+    temp = 
+
+    # display data
+    countLabel = Label(collegiateFont, text=str(count))
+    countLabel.x = 100
+    countLabel.y = 129
+    countLabel.color = 0xFFFFFF
+
+    countLabel2 = Label(collegiateFont, text=str(count))
+    countLabel2.x = 155
+    countLabel2.y = 180
+    countLabel2.color = 0xFFFFFF
+
+    primaryDisplayGroup.append(countLabel)
+    primaryDisplayGroup.append(countLabel2)
+
+    # load github stat background
+    setBackground(rootDirectory + "/youtube_background.bmp")
+
+    # wait
+    time.sleep(60)
+
+    # cleanup!
+    while countLabel:
+        countLabel.pop()
+
+    while countLabel2:
+        countLabel.pop()
 
 # Main loop !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
+
 while True:
-    
+
     # board.DISPLAY.show(self.splash)
     # for i in range(100, -1, -1):  # dim down
-    #     self.set_backlight(i/100)
+    #     self.setBacklight(i/100)
     #     time.sleep(0.005)
     # self.setBackground(bootscreen)
     # board.DISPLAY.wait_for_frame()
     # for i in range(100):  # dim up
-    #     self.set_backlight(i/100)
+    #     self.setBacklight(i/100)
     #     time.sleep(0.005)
     # time.sleep(2)
 
-    # create label
-    # newCaption = Label(self._caption_font, text=str(caption_text))
-    # newCaption.x = caption_position[0]
-    # newCaption.y = caption_position[1]
-    # newCaption.color = caption_color
-    # self.splash.append(newCaption)
-
-    # update label text
-    # self._caption._update_text(str(caption_text))  # pylint: disable=protected-access
-    # board.DISPLAY.refresh_soon()
-    # board.DISPLAY.wait_for_frame()
-
-    # get data from url
-    # self.statusNeopixel.fill((100, 100, 0))   # yellow = fetching data
-    # gc.collect()
-    # r = requests.get(self._url)
-    # gc.collect()
-    # self.statusNeopixel.fill((0, 0, 100))   # green = got data
-
-    # if it's json data
-    # jsonData = r.json()
-    # gc.collect()
-
-    # dispose of your request!
-    # r.close()
-
-    showGithubStats("/jgoergen/CamBot");
+    showGithubStats("/jgoergen/CamBot")
+    showRedditStats("circuitpython")
+    showGithubStats("/jgoergen/Attiny85JarNightLight")
+    showTwitterStats("adafruit")
+    showGithubStats("/jgoergen/Wardriver")
+    showYoutubeStats("UCpOlOeQjj7EsVnDh3zuCgsA")
+    showGithubStats("/jgoergen/WanGrenade")
 
     time.sleep(60)
